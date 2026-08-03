@@ -92,7 +92,8 @@ def main():
                 if compact_stop_id and row["stop_id"] in stop_names:
                     departures.append({
                         "stopID": compact_stop_id,
-                        "direction": trip["direction"],
+                        "_canonicalDirection": trip["direction"],
+                        "_nextStop": stop_names[row["stop_id"]],
                         "routeID": trip["routeID"],
                         "headsign": trip["headsign"],
                         "serviceID": trip["serviceID"],
@@ -104,6 +105,22 @@ def main():
                     })
             previous = row
 
+        direction_groups = {}
+        for departure in departures:
+            key = (departure["stopID"], departure["_nextStop"])
+            direction_groups.setdefault(key, set()).add(departure["_canonicalDirection"])
+
+        for departure in departures:
+            key = (departure["stopID"], departure["_nextStop"])
+            canonical_directions = direction_groups[key]
+            departure["direction"] = (
+                next(iter(canonical_directions))
+                if len(canonical_directions) == 1
+                else departure["_nextStop"]
+            )
+            del departure["_canonicalDirection"]
+            del departure["_nextStop"]
+
         catalog = {}
         for departure in departures:
             stop = catalog.setdefault(departure["stopID"], {
@@ -111,8 +128,11 @@ def main():
                 "name": names_by_compact_id[departure["stopID"]],
                 "directions": {},
             })
-            routes = stop["directions"].setdefault(departure["direction"], set())
-            routes.add(departure["routeID"])
+            direction = stop["directions"].setdefault(
+                departure["direction"], {"routeIDs": set(), "aliases": set()}
+            )
+            direction["routeIDs"].add(departure["routeID"])
+            direction["aliases"].add(departure["headsign"])
 
         stops = []
         for stop in catalog.values():
@@ -120,8 +140,12 @@ def main():
                 "id": stop["id"],
                 "name": stop["name"],
                 "directions": [
-                    {"name": name, "routeIDs": sorted(route_ids)}
-                    for name, route_ids in sorted(stop["directions"].items())
+                    {
+                        "name": name,
+                        "routeIDs": sorted(direction["routeIDs"]),
+                        "aliases": sorted(direction["aliases"]),
+                    }
+                    for name, direction in sorted(stop["directions"].items())
                 ],
             })
 
