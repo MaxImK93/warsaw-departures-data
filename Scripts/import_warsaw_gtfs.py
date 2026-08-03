@@ -2,6 +2,7 @@
 """Build the compact SKM schedule bundled with the iOS app from Polish rail GTFS."""
 
 import argparse
+from collections import Counter
 import csv
 import datetime as dt
 import io
@@ -36,14 +37,28 @@ def main():
             if row["agency_id"] == "SKM" and row["route_type"] == "2"
         }
 
+        trip_rows = [
+            row for row in rows(archive, "trips.txt")
+            if row["route_id"] in route_ids
+        ]
+        direction_headsigns = {}
+        for row in trip_rows:
+            key = (row["route_id"], row["direction_id"])
+            direction_headsigns.setdefault(key, Counter())[row["trip_headsign"]] += 1
+
+        canonical_directions = {
+            key: counts.most_common(1)[0][0]
+            for key, counts in direction_headsigns.items()
+        }
+
         trips = {
             row["trip_id"]: {
                 "routeID": route_ids[row["route_id"]],
                 "serviceID": row["service_id"],
                 "headsign": row["trip_headsign"],
+                "direction": canonical_directions[(row["route_id"], row["direction_id"])],
             }
-            for row in rows(archive, "trips.txt")
-            if row["route_id"] in route_ids
+            for row in trip_rows
         }
 
         stop_names = {}
@@ -53,6 +68,9 @@ def main():
             compact_ids[row["stop_id"]] = LEGACY_STOP_IDS.get(
                 row["stop_name"], f"plk-{row['stop_id']}"
             )
+        names_by_compact_id = {
+            compact_ids[stop_id]: name for stop_id, name in stop_names.items()
+        }
 
         service_dates = {}
         for row in rows(archive, "calendar_dates.txt"):
@@ -74,7 +92,7 @@ def main():
                 if compact_stop_id and row["stop_id"] in stop_names:
                     departures.append({
                         "stopID": compact_stop_id,
-                        "direction": stop_names.get(row["stop_id"], trip["headsign"]),
+                        "direction": trip["direction"],
                         "routeID": trip["routeID"],
                         "headsign": trip["headsign"],
                         "serviceID": trip["serviceID"],
@@ -90,10 +108,7 @@ def main():
         for departure in departures:
             stop = catalog.setdefault(departure["stopID"], {
                 "id": departure["stopID"],
-                "name": stop_names[next(
-                    stop_id for stop_id, compact_id in compact_ids.items()
-                    if compact_id == departure["stopID"]
-                )],
+                "name": names_by_compact_id[departure["stopID"]],
                 "directions": {},
             })
             routes = stop["directions"].setdefault(departure["direction"], set())
@@ -116,6 +131,7 @@ def main():
             "sourceURL": "https://mkuran.pl/gtfs/polish_trains.zip",
             "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
             "feedVersion": feed_info.get("feed_version", ""),
+            "catalogVersion": 2,
             "serviceDates": service_dates,
             "stops": sorted(stops, key=lambda stop: stop["name"]),
             "departures": departures,
