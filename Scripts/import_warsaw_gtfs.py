@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the compact SKM schedule bundled with the iOS app from Warsaw GTFS."""
+"""Build the compact SKM schedule bundled with the iOS app from Polish rail GTFS."""
 
 import argparse
 import csv
@@ -33,7 +33,7 @@ def main():
         route_ids = {
             row["route_id"]: row["route_short_name"]
             for row in rows(archive, "routes.txt")
-            if row["route_short_name"].startswith("S") and row["route_type"] == "2"
+            if row["agency_id"] == "SKM" and row["route_type"] == "2"
         }
 
         trips = {
@@ -78,15 +78,17 @@ def main():
                         "headsign": trip["headsign"],
                         "serviceID": trip["serviceID"],
                         "departureTime": previous["departure_time"],
-                        "platform": previous.get("stop_headsign") or None,
+                        "platform": previous.get("platform") or None,
+                        "tripID": previous["trip_id"],
+                        "stopSequence": int(previous["stop_sequence"]),
                         "mode": "train",
                     })
             previous = row
 
         feed_info = next(rows(archive, "feed_info.txt"))
         result = {
-            "source": "Warszawski Transport Publiczny (ZTM Warszawa)",
-            "sourceURL": "https://mkuran.pl/gtfs/warsaw.zip",
+            "source": "PKP PLK / SKM Warszawa",
+            "sourceURL": "https://mkuran.pl/gtfs/polish_trains.zip",
             "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
             "feedVersion": feed_info.get("feed_version", ""),
             "serviceDates": service_dates,

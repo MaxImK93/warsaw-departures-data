@@ -1,0 +1,39 @@
+name: Update SKM realtime
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-skm-realtime
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download current train updates
+        run: curl --fail --location --retry 3 --output /tmp/updates.json https://mkuran.pl/gtfs/polish_trains/updates.json
+
+      - name: Build compact SKM realtime feed
+        run: python3 Scripts/compact_skm_realtime.py /tmp/updates.json /tmp/skm_realtime.json
+
+      - name: Publish replaceable realtime branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan realtime-publish
+          git rm -rf .
+          mkdir -p data
+          cp /tmp/skm_realtime.json data/skm_realtime.json
+          git add data/skm_realtime.json
+          git commit -m "Update SKM realtime"
+          git push --force origin HEAD:realtime
