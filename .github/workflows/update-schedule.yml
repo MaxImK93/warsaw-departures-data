@@ -1,0 +1,40 @@
+name: Update Warsaw schedule
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-warsaw-schedule
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download current Warsaw GTFS
+        run: curl --fail --location --retry 3 --output /tmp/warsaw-gtfs.zip https://mkuran.pl/gtfs/warsaw.zip
+
+      - name: Build compact SKM schedule
+        run: python3 Scripts/import_warsaw_gtfs.py /tmp/warsaw-gtfs.zip data/warsaw_skm_schedule.json
+
+      - name: Validate output
+        run: python3 Scripts/validate_schedule.py data/warsaw_skm_schedule.json
+
+      - name: Publish changed schedule
+        run: |
+          if git diff --quiet -- data/warsaw_skm_schedule.json; then
+            echo "Schedule has not changed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/warsaw_skm_schedule.json
+          git commit -m "Update Warsaw SKM schedule"
+          git push
