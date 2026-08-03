@@ -9,7 +9,7 @@ import json
 import zipfile
 
 
-TARGET_STOPS = {
+LEGACY_STOP_IDS = {
     "Warszawa Ochota": "warszawa-ochota",
     "Warszawa Śródmieście": "warszawa-srodmiescie",
     "Warszawa Zachodnia": "warszawa-zachodnia",
@@ -47,11 +47,12 @@ def main():
         }
 
         stop_names = {}
-        target_ids = {}
+        compact_ids = {}
         for row in rows(archive, "stops.txt"):
             stop_names[row["stop_id"]] = row["stop_name"]
-            if row["stop_name"] in TARGET_STOPS:
-                target_ids[row["stop_id"]] = TARGET_STOPS[row["stop_name"]]
+            compact_ids[row["stop_id"]] = LEGACY_STOP_IDS.get(
+                row["stop_name"], f"plk-{row['stop_id']}"
+            )
 
         service_dates = {}
         for row in rows(archive, "calendar_dates.txt"):
@@ -69,8 +70,8 @@ def main():
                 continue
 
             if previous and previous["trip_id"] == row["trip_id"]:
-                compact_stop_id = target_ids.get(previous["stop_id"])
-                if compact_stop_id:
+                compact_stop_id = compact_ids.get(previous["stop_id"])
+                if compact_stop_id and row["stop_id"] in stop_names:
                     departures.append({
                         "stopID": compact_stop_id,
                         "direction": stop_names.get(row["stop_id"], trip["headsign"]),
@@ -85,6 +86,30 @@ def main():
                     })
             previous = row
 
+        catalog = {}
+        for departure in departures:
+            stop = catalog.setdefault(departure["stopID"], {
+                "id": departure["stopID"],
+                "name": stop_names[next(
+                    stop_id for stop_id, compact_id in compact_ids.items()
+                    if compact_id == departure["stopID"]
+                )],
+                "directions": {},
+            })
+            routes = stop["directions"].setdefault(departure["direction"], set())
+            routes.add(departure["routeID"])
+
+        stops = []
+        for stop in catalog.values():
+            stops.append({
+                "id": stop["id"],
+                "name": stop["name"],
+                "directions": [
+                    {"name": name, "routeIDs": sorted(route_ids)}
+                    for name, route_ids in sorted(stop["directions"].items())
+                ],
+            })
+
         feed_info = next(rows(archive, "feed_info.txt"))
         result = {
             "source": "PKP PLK / SKM Warszawa",
@@ -92,6 +117,7 @@ def main():
             "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
             "feedVersion": feed_info.get("feed_version", ""),
             "serviceDates": service_dates,
+            "stops": sorted(stops, key=lambda stop: stop["name"]),
             "departures": departures,
         }
 
