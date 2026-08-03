@@ -18,11 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download current Warsaw GTFS
-        run: curl --fail --location --retry 3 --output /tmp/warsaw-gtfs.zip https://mkuran.pl/gtfs/warsaw.zip
+      - name: Download current Polish rail GTFS
+        run: curl --fail --location --retry 3 --output /tmp/polish-trains.zip https://mkuran.pl/gtfs/polish_trains.zip
 
       - name: Build compact SKM schedule
-        run: python3 Scripts/import_warsaw_gtfs.py /tmp/warsaw-gtfs.zip data/warsaw_skm_schedule.json
+        run: python3 Scripts/import_warsaw_gtfs.py /tmp/polish-trains.zip data/warsaw_skm_schedule.json
 
       - name: Validate output
         run: python3 Scripts/validate_schedule.py data/warsaw_skm_schedule.json
